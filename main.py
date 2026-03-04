@@ -6,39 +6,81 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox, simpledialog
 import pathlib
 import pefile
+import urllib.request
+
 
 def extract_product_version_from_exe(file_path):
     try:
-        # Открываем исполняемый файл
         pe = pefile.PE(file_path)
-    
-        # Проверяем наличие раздела с версионной информацией
         if hasattr(pe, 'VS_VERSIONINFO'):
-            # Берём первую строку из массива версионной информации
             fixed_file_info = pe.VS_FIXEDFILEINFO[0]
-        
-            # Получаем отдельные компоненты версии продукта
             product_version_ms = fixed_file_info.ProductVersionMS
             product_version_ls = fixed_file_info.ProductVersionLS
         
-            # Преобразовываем DWORD-значения в привычный вид версии (X.Y.Z.W)
             major = product_version_ms >> 16 & 0xffff
             minor = product_version_ms & 0xffff
             patch = product_version_ls >> 16 & 0xffff
             build = product_version_ls & 0xffff
         
-            return f"{major}.{minor}.{patch}.{build}"  # Возвращаем версию продукта
+            return f"{major}.{minor}.{patch}.{build}"
         else:
             return "Версия не найдена"
     except Exception as e:
         return f"Ошибка: {e}"
 
-# Использовать функцию для конкретного файла
-file_path = r'main1.4.exe'  # Укажите реальный путь к вашему файлу!
-version = extract_product_version_from_exe(file_path)
+def fetch_latest_release(owner, repo):
+    """Получает последнюю версию продукта с GitHub"""
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    req = urllib.request.Request(api_url, headers=headers)
+    response = urllib.request.urlopen(req)
+    data = json.loads(response.read().decode('utf-8'))
+    return {
+        "version": data.get("tag_name").lstrip('v'),  # Удаляем префикс 'v'
+        "download_url": next((asset['browser_download_url'] for asset in data['assets']), None)
+    }
 
-# Выведем полученный результат
-print(f"Версия продукта: {version}")
+def compare_versions(current_version, latest_version):
+    """Сравнивает текущую версию с доступной на GitHub"""
+    def parse_version(version_str):
+        parts = list(map(int, version_str.split('.')))  # Преобразует строку в массив чисел
+        while len(parts) < 4:
+            parts.append(0)
+        return tuple(parts[:4])
+
+    current_parts = parse_version(current_version)
+    latest_parts = parse_version(latest_version)
+    return current_parts < latest_parts
+
+def offer_update_if_available(exe_path, owner, repo):
+    """Проверяет наличие новой версии и предлагает обновление"""
+    current_version = extract_product_version_from_exe(exe_path)
+    latest_release = fetch_latest_release(owner, repo)
+
+    if compare_versions(current_version, latest_release["version"]):
+        result = messagebox.askyesno("Обновление доступно",
+                                    f"Доступна новая версия: {latest_release['version']} (Текущая версия: {current_version})\n\nХотите скачать обновление?")
+        if result:
+            download_url = latest_release["download_url"]
+            download_file(download_url, "new_version.exe")  # Скачать новую версию
+            messagebox.showinfo("Обновлено!",
+                                "Файл обновлён. Пожалуйста, замените текущий исполняемый файл вручную.")
+    else:
+        messagebox.showinfo("Обновления нет",
+                            "Вы используете самую актуальную версию.")
+
+def download_file(url, output_filename):
+    """Скачивает файл по указанному URL"""
+    urllib.request.urlretrieve(url, output_filename)
+
+# Главное тело программы
+if __name__ == "__main__":
+    
+
+    owner = "oskinr"  # Владелец репозитория
+    repo = "osa"      # Название репозитория
+    exe_path = r"osa.exe"  # Путь к вашему исполняемому файлу
+    offer_update_if_available(exe_path, owner, repo)
 
 
 
@@ -287,7 +329,7 @@ def change_theme(event=None):
 
 # Основной интерфейс
 root = ctk.CTk()
-root.title("Работа с файлами")
+root.title("Работа с файлами v1.4.0")
 root.geometry("800x500")
 
 # Проверка наличия иконки
