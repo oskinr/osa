@@ -62,7 +62,7 @@ def offer_update_if_available(exe_path, owner, repo):
                                     f"Доступна новая версия: {latest_release['version']} (Текущая версия: {current_version})\n\nХотите скачать обновление?")
         if result:
             download_url = latest_release["download_url"]
-            download_file(download_url, "new_version.exe")  # Скачать новую версию
+            download_file(download_url, "osa_new.exe")  # Скачать новую версию
             messagebox.showinfo("Обновлено!",
                                 "Файл обновлён. Пожалуйста, замените текущий исполняемый файл вручную.")
     else:
@@ -396,3 +396,4 @@ edit_button.pack(side=ctk.RIGHT, padx=(10, 10))
 
 # Запуск приложения
 root.mainloop()
+
