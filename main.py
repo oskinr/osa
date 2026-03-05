@@ -14,7 +14,7 @@ def extract_product_version_from_exe(file_path):
     Извлекает номер версии продукта из файла EXE.
     
     :param file_path: путь к файлу .exe
-    :return: строка с версией формата Major.Minor.Build.Revision
+    :return: строка с версией формата Major.Minor.Build.Revision или None в случае ошибки
     """
     try:
         pe = pefile.PE(file_path)
@@ -30,9 +30,9 @@ def extract_product_version_from_exe(file_path):
         
             return f"{major}.{minor}.{patch}.{build}"
         else:
-            return "Версия не найдена"
+            return None  # Вернем None, если версия не найдена
     except Exception as e:
-        return f"Ошибка: {e}"
+        return None  # Вернем None, если произошли ошибки
 
 def fetch_latest_release(owner, repo):
     """
@@ -40,7 +40,7 @@ def fetch_latest_release(owner, repo):
     
     :param owner: владелец репозитория
     :param repo: название репозитория
-    :return: словарь с номером версии и ссылкой на скачивание
+    :return: словарь с номером версии и ссылкой на скачивание или None в случае ошибки
     """
     try:
         api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
@@ -49,18 +49,18 @@ def fetch_latest_release(owner, repo):
         with urllib.request.urlopen(req) as response:
             data = json.loads(response.read().decode('utf-8'))
             return {
-                "version": data.get("tag_name").lstrip('v'),
+                "version": data.get("tag_name", "").lstrip('v'),  # Берём версию, игнорируя префикс 'v'
                 "download_url": next((asset['browser_download_url'] for asset in data['assets']), None)
             }
     except urllib.error.HTTPError as http_err:
         print(f"HTTP Error occurred: {http_err}")
-        return {"version": None}
+        return None
     except urllib.error.URLError as url_err:
         print(f"URL Error occurred: {url_err}")
-        return {"version": None}
+        return None
     except Exception as err:
         print(f"An error occurred: {err}")
-        return {"version": None}
+        return None
 
 def compare_versions(current_version, latest_version):
     """
@@ -70,6 +70,9 @@ def compare_versions(current_version, latest_version):
     :param latest_version: последняя доступная версия
     :return: True, если текущая версия меньше последней
     """
+    if current_version is None or latest_version is None:
+        return False  # Невозможно сравнивать, если хотя бы одна версия отсутствует
+
     def parse_version(version_str):
         parts = list(map(int, version_str.split('.')))
         while len(parts) < 4:
@@ -100,9 +103,21 @@ def offer_update_if_available(exe_path, owner, repo):
     current_version = extract_product_version_from_exe(exe_path)
     latest_release = fetch_latest_release(owner, repo)
 
+    # Проверяем, не равен ли результат None
+    if latest_release is None:
+        messagebox.showerror("Ошибка",
+                             "Не удалось получить информацию о последних обновлениях. Проверьте подключение к интернету.")
+        return
+
+    # Проверяем, не равен ли ключ ["version"] None
     if latest_release["version"] is None:
         messagebox.showinfo("Нет связи с сервером",
                            "Не удалось подключиться к сети для проверки обновлений. Ваше приложение продолжит работу.")
+        return
+
+    if current_version is None:
+        messagebox.showerror("Ошибка",
+                             "Файл должен называться osa.exe(переименуйте в osa.exe) - Не удалось определить текущую версию программы. Возможно, файл повреждён или не найден.")
         return
 
     if compare_versions(current_version, latest_release["version"]):
@@ -120,9 +135,9 @@ def offer_update_if_available(exe_path, owner, repo):
             download_url = latest_release["download_url"]
             download_file(download_url, "osa_new.exe")
             
-            # Предлагает пользователю перезапустить программу
+            # Предлагаешь пользователю перезапустить программу
             messagebox.showwarning("Необходимо завершение работы",
-                                   "Для продолжения установки обновления закройте запущенный экземпляр программы и повторно запустите osa_old новый переименуется в osa.exe его и используем.")
+                                   "Для продолжения установки обновления закройте запущенный экземпляр программы и повторно запустите osa_old - переименует osa_new в osa.exe затем запускайте новую версию osa.exe.")
             sys.exit()  # Завершаем текущую сессию
     else:
         messagebox.showinfo("Нет обновлений",
@@ -140,7 +155,7 @@ if __name__ == "__main__":
         # Перемещаем новую версию поверх старой
         shutil.move(new_file, exe_path)
         messagebox.showinfo("Обновлено",
-                            "Приложение успешно обновлено!")
+                            "Приложение успешно обновлено используйте файл osa.exe!")
         sys.exit()  # Выходим после успешной замены
     else:
         offer_update_if_available(exe_path, owner, repo)
@@ -392,7 +407,7 @@ def change_theme(event=None):
 
 # Основной интерфейс
 root = ctk.CTk()
-root.title("Работа с файлами v1.7.0")
+root.title("Работа с файлами v1.8.0")
 root.geometry("800x500")
 
 # Проверка наличия иконки
@@ -459,5 +474,3 @@ edit_button.pack(side=ctk.RIGHT, padx=(10, 10))
 
 # Запуск приложения
 root.mainloop()
-
-
