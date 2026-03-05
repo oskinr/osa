@@ -7,9 +7,15 @@ from tkinter import filedialog, messagebox, simpledialog
 import pathlib
 import pefile
 import urllib.request
-
+import sys
 
 def extract_product_version_from_exe(file_path):
+    """
+    Извлекает номер версии продукта из файла EXE.
+    
+    :param file_path: путь к файлу .exe
+    :return: строка с версией формата Major.Minor.Build.Revision
+    """
     try:
         pe = pefile.PE(file_path)
         if hasattr(pe, 'VS_VERSIONINFO'):
@@ -29,21 +35,43 @@ def extract_product_version_from_exe(file_path):
         return f"Ошибка: {e}"
 
 def fetch_latest_release(owner, repo):
-    """Получает последнюю версию продукта с GitHub"""
-    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    req = urllib.request.Request(api_url, headers=headers)
-    response = urllib.request.urlopen(req)
-    data = json.loads(response.read().decode('utf-8'))
-    return {
-        "version": data.get("tag_name").lstrip('v'),  # Удаляем префикс 'v'
-        "download_url": next((asset['browser_download_url'] for asset in data['assets']), None)
-    }
+    """
+    Получает информацию о последней выпущенной версии проекта на GitHub.
+    
+    :param owner: владелец репозитория
+    :param repo: название репозитория
+    :return: словарь с номером версии и ссылкой на скачивание
+    """
+    try:
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+        headers = {'User-Agent': 'Mozilla/5.0'}  # Необходимый User-Agent для обхода ограничений API GitHub
+        req = urllib.request.Request(api_url, headers=headers)
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            return {
+                "version": data.get("tag_name").lstrip('v'),
+                "download_url": next((asset['browser_download_url'] for asset in data['assets']), None)
+            }
+    except urllib.error.HTTPError as http_err:
+        print(f"HTTP Error occurred: {http_err}")
+        return {"version": None}
+    except urllib.error.URLError as url_err:
+        print(f"URL Error occurred: {url_err}")
+        return {"version": None}
+    except Exception as err:
+        print(f"An error occurred: {err}")
+        return {"version": None}
 
 def compare_versions(current_version, latest_version):
-    """Сравнивает текущую версию с доступной на GitHub"""
+    """
+    Сравнивает две строки версий формата MAJOR.MINOR.BUILD.REVISION.
+    
+    :param current_version: текущая версия
+    :param latest_version: последняя доступная версия
+    :return: True, если текущая версия меньше последней
+    """
     def parse_version(version_str):
-        parts = list(map(int, version_str.split('.')))  # Преобразует строку в массив чисел
+        parts = list(map(int, version_str.split('.')))
         while len(parts) < 4:
             parts.append(0)
         return tuple(parts[:4])
@@ -52,35 +80,70 @@ def compare_versions(current_version, latest_version):
     latest_parts = parse_version(latest_version)
     return current_parts < latest_parts
 
+def download_file(url, output_filename):
+    """
+    Скачивает файл по указанной ссылке.
+    
+    :param url: URL файла
+    :param output_filename: имя выходного файла
+    """
+    urllib.request.urlretrieve(url, output_filename)
+
 def offer_update_if_available(exe_path, owner, repo):
-    """Проверяет наличие новой версии и предлагает обновление"""
+    """
+    Проверяет доступность новой версии приложения и запрашивает подтверждение на обновление.
+    
+    :param exe_path: путь к исполняемому файлу приложения
+    :param owner: владелец репозитория
+    :param repo: название репозитория
+    """
     current_version = extract_product_version_from_exe(exe_path)
     latest_release = fetch_latest_release(owner, repo)
 
+    if latest_release["version"] is None:
+        messagebox.showinfo("Нет связи с сервером",
+                           "Не удалось подключиться к сети для проверки обновлений. Ваше приложение продолжит работу.")
+        return
+
     if compare_versions(current_version, latest_release["version"]):
-        result = messagebox.askyesno("Обновление доступно",
-                                    f"Доступна новая версия: {latest_release['version']} (Текущая версия: {current_version})\n\nХотите скачать обновление?")
+        result = messagebox.askyesno(
+            "Доступно обновление!",
+            f"Текущая версия: {current_version}, Новая версия: {latest_release['version']}.\nХотите установить обновление?"
+        )
         if result:
+            # Сохраняем резервную копию
+            old_file = os.path.join(os.path.dirname(exe_path), "osa_old.exe")
+            if not os.path.exists(old_file):  # Только если старое сохранение отсутствует
+                shutil.copy2(exe_path, old_file)
+                
+            # Скачиваем новую версию
             download_url = latest_release["download_url"]
-            download_file(download_url, "osa_new.exe")  # Скачать новую версию
-            messagebox.showinfo("Обновлено!",
-                                "Файл обновлён. Пожалуйста, замените текущий исполняемый файл вручную.")
+            download_file(download_url, "osa_new.exe")
+            
+            # Предлагает пользователю перезапустить программу
+            messagebox.showwarning("Необходимо завершение работы",
+                                   "Для продолжения установки обновления закройте запущенный экземпляр программы и повторно запустите osa_old новый переименуется в osa.exe его и используем.")
+            sys.exit()  # Завершаем текущую сессию
     else:
-        messagebox.showinfo("Обновления нет",
-                            "Вы используете самую актуальную версию.")
+        messagebox.showinfo("Нет обновлений",
+                           "Ваше приложение уже актуально.")
 
-def download_file(url, output_filename):
-    """Скачивает файл по указанному URL"""
-    urllib.request.urlretrieve(url, output_filename)
-
-# Главное тело программы
+# Точка входа в программу
 if __name__ == "__main__":
-    
+    owner = "oskinr"   # Имя владельца репозитория на GitHub
+    repo = "osa"       # Название вашего репозитория
+    exe_path = r"osa.exe"  # Исполняемый файл
+    new_file = os.path.join(os.path.dirname(exe_path), "osa_new.exe")
 
-    owner = "oskinr"  # Владелец репозитория
-    repo = "osa"      # Название репозитория
-    exe_path = r"osa.exe"  # Путь к вашему исполняемому файлу
-    offer_update_if_available(exe_path, owner, repo)
+    # Проверяем наличие нового файла после перезапуска
+    if os.path.exists(new_file):
+        # Перемещаем новую версию поверх старой
+        shutil.move(new_file, exe_path)
+        messagebox.showinfo("Обновлено",
+                            "Приложение успешно обновлено!")
+        sys.exit()  # Выходим после успешной замены
+    else:
+        offer_update_if_available(exe_path, owner, repo)
 
 
 
@@ -329,7 +392,7 @@ def change_theme(event=None):
 
 # Основной интерфейс
 root = ctk.CTk()
-root.title("Работа с файлами v1.4.0")
+root.title("Работа с файлами v1.7.0")
 root.geometry("800x500")
 
 # Проверка наличия иконки
@@ -396,4 +459,5 @@ edit_button.pack(side=ctk.RIGHT, padx=(10, 10))
 
 # Запуск приложения
 root.mainloop()
+
 
