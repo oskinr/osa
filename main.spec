@@ -48,7 +48,7 @@ exe = EXE(
     version=VSVersionInfo(
         ffi=FixedFileInfo(
             filevers=(1, 0, 0, 0),  # Версия файла
-            prodvers=(1, 5, 0, 0),  # Версия продукта
+            prodvers=(1, 8, 0, 0),  # Версия продукта
             flags=0x0,               # Флаги (нет флагов)
             OS=0x4                   # Тип ОС (Windows NT)
         ),
@@ -57,10 +57,10 @@ exe = EXE(
                 StringTable(
                     u'040904E4', [
                         StringStruct(u'ProductName', u'Работа с файлами'),  # Название продукта
-                        StringStruct(u'ProductVersion', u'1.5.0.0'),         # Версия продукта (текстовая)
+                        StringStruct(u'ProductVersion', u'1.8.0.0'),         # Версия продукта (текстовая)
                         StringStruct(u'CompanyName', u'ULIY'),              # Компания-разработчик
-                        StringStruct(u'LegalCopyright', u'Copyright © ULIY 2023'),  # Авторские права
-                        StringStruct(u'FileDescription', u'Для работы с системой ЭДО'),  # Описание файла
+                        StringStruct(u'LegalCopyright', u'Copyright © Oskin R.N. 2026'),  # Авторские права
+                        StringStruct(u'FileDescription', u'Для работы с системой ЭДО и Дит'),  # Описание файла
                         StringStruct(u'FileVersion', u'1.0.0.0'),             # Версия файла (текстовая)
                         StringStruct(u'InternalName', u'osa'),              # Внутреннее название
                         StringStruct(u'OriginalFilename', u'osa.exe'),      # Исходное имя файла
