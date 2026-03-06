@@ -3,69 +3,63 @@ from PIL import Image, ImageTk
 import os
 import shutil
 import json
-import pefile
 import urllib.request
-import sys
-import customtkinter as ctk
 from tkinter import messagebox
 import subprocess  # для запуска исполняемых файлов
 import pathlib     # для работы с путями
 import win32com.client  # для асинхронного удаления файла
+import datetime    # для формирования расписания удаления
 
-
-# Класс для отображения анимированной GIF
+# Оптимизированный класс для отображения анимации GIF
 class AnimatedGif(tk.Label):
     def __init__(self, master, path):
-        tk.Label.__init__(self, master)
+        super().__init__(master)
         self.frames = []
-        self.delay = 100  # Время между кадрами (мс)
+        self.delay = 100  # Задержка между кадрами (мс)
         self.current_frame = 0
         self.load_gif(path)
-        self.after(0, self.update_image)
+        self.start_animation()
 
     def load_gif(self, path):
-        try:
-            img = Image.open(path)
-            while True:
-                self.frames.append(ImageTk.PhotoImage(img.convert("RGBA")))
-                img.seek(len(self.frames))  # Переходим к следующему кадру
-        except EOFError:
-            pass  # Последний кадр достигнут
+        img = Image.open(path)
+        while True:
+            frame = ImageTk.PhotoImage(img.copy())
+            self.frames.append(frame)
+            try:
+                img.seek(len(self.frames))  # переходим к следующему кадру
+            except EOFError:
+                break
 
-    def update_image(self):
+    def start_animation(self):
         if self.frames:
-            self.config(image=self.frames[self.current_frame])
+            self.configure(image=self.frames[self.current_frame])
             self.current_frame = (self.current_frame + 1) % len(self.frames)
-            self.after(self.delay, self.update_image)
+            self.after(self.delay, self.start_animation)
 
-# Логика проверки и скачивания обновлений
+# Функция для извлечения версии продукта из файла EXE с помощью PowerShell
 def extract_product_version_from_exe(file_path):
     """
-    Извлекает номер версии продукта из файла EXE.
-    
-    :param file_path: путь к файлу .exe
-    :return: строка с версией формата Major.Minor.Build.Revision или None в случае ошибки
+    Извлекает версию продукта из файла EXE с помощью PowerShell.
     """
+    command = [
+        "powershell",
+        "-Command",
+        "(Get-ItemProperty -Path '{}').VersionInfo.ProductVersion".format(file_path)
+    ]
     try:
-        pe = pefile.PE(file_path)
-        fixed_file_info = pe.VS_FIXEDFILEINFO[0]
-        product_version_ms = fixed_file_info.ProductVersionMS
-        product_version_ls = fixed_file_info.ProductVersionLS
-        major = product_version_ms >> 16 & 0xffff
-        minor = product_version_ms & 0xffff
-        patch = product_version_ls >> 16 & 0xffff
-        build = product_version_ls & 0xffff
-        return f"{major}.{minor}.{patch}.{build}"
+        result = subprocess.check_output(command, universal_newlines=True)
+        return result.strip()  # убираем лишние пробелы и символы перевода строки
+    except subprocess.CalledProcessError as e:
+        print(f"Ошибка при выполнении команды PowerShell: {e}")
+        return None
     except Exception as e:
+        print(f"Общая ошибка: {e}")
         return None
 
+# Логика проверки и скачивания обновлений
 def fetch_latest_release(owner, repo):
     """
     Получает информацию о последней выпущенной версии проекта на GitHub.
-    
-    :param owner: владелец репозитория
-    :param repo: название репозитория
-    :return: словарь с номером версии и ссылкой на скачивание или None в случае ошибки
     """
     try:
         api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
@@ -81,44 +75,69 @@ def fetch_latest_release(owner, repo):
         print(f"Ошибка загрузки: {err}")
         return None
 
+# Сравнение двух версий
 def compare_versions(current_version, latest_version):
     """
     Сравнивает две строки версий формата MAJOR.MINOR.BUILD.REVISION.
-    
-    :param current_version: текущая версия
-    :param latest_version: последняя доступная версия
-    :return: True, если текущая версия меньше последней
     """
     if current_version is None or latest_version is None:
         return False
-    parts_current = map(int, current_version.split('.'))
-    parts_latest = map(int, latest_version.split('.'))
-    return tuple(parts_current) < tuple(parts_latest)
+    parts_current = list(map(int, current_version.split('.')))
+    parts_latest = list(map(int, latest_version.split('.')))
+    return parts_current < parts_latest
 
+# Загрузка файла по ссылке
 def download_file(url, output_filename):
     """
     Скачивает файл по указанной ссылке.
-    
-    :param url: URL файла
-    :param output_filename: имя выходного файла
     """
     urllib.request.urlretrieve(url, output_filename)
 
+# Планирование удаления файла позже через задание планировщика Windows
 def schedule_delete(filename):
-    """Планирует удаление файла после завершения его работы."""
+    """
+    Планирует удаление файла позже через задание планировщика Windows.
+    """
     shell = win32com.client.Dispatch("WScript.Shell")
-    cmd = f'del /F "{filename}"'
+    task_name = "DeleteOldFile"
+    now = datetime.datetime.now()
+    delay_minutes = 1  # подождем минуту перед удалением
+    scheduled_time = now + datetime.timedelta(minutes=delay_minutes)
+    formatted_time = scheduled_time.strftime("%H:%M")
+
+    # Команда для удаления файла
+    del_command = f'del /F "{filename}"'
+
+    # Создаем задание в планировщике
+    cmd = (
+        f"schtasks /create /tn \"{task_name}\" "
+        f"/tr \"{del_command}\" "
+        f"/sc ONCE /st {formatted_time}"
+    )
     shell.Run(cmd, 0, False)
 
+    messagebox.showinfo("Новый файл скачен!",f"Задание на удаление старого файла запланировано на {scheduled_time}.")
+
+# Предложение обновления пользователю
 def offer_update_if_available(exe_path, owner, repo, window):
     """
     Проверяет доступные обновления и предлагает обновить приложение.
-    
-    :param exe_path: путь к исполняемому файлу приложения
-    :param owner: владелец репозитория
-    :param repo: название репозитория
-    :param window: ссылка на главное окно Tkinter
     """
+    # Проверяем, существует ли файл osa.exe
+    if not os.path.exists(exe_path):
+        window.update_status("Файл osa.exe не найден. Скачиваем последнюю версию...")
+        latest_release = fetch_latest_release(owner, repo)
+        if latest_release is None:
+            window.update_status("Ошибка: не удалось получить информацию о последних обновлениях.")
+            return
+        download_url = latest_release["download_url"]
+        download_file(download_url, exe_path)
+        window.update_status("Новая версия скачана. Запускаем приложение.")
+        subprocess.Popen([exe_path])
+        window.fade_out()
+        return
+
+    # Если файл существует, продолжаем обычную проверку обновлений
     current_version = extract_product_version_from_exe(exe_path)
     latest_release = fetch_latest_release(owner, repo)
 
@@ -175,11 +194,11 @@ def offer_update_if_available(exe_path, owner, repo, window):
         # Сразу начинаем исчезновение окна
         window.fade_out()
 
-# Главное окно с информацией и анимацией
+# Основное окно с информацией и анимацией
 class UpdateWindow:
     def __init__(self, master):
         self.master = master
-        self.master.title("Launcher osa")
+        self.master.title("Launcher")
         self.master.geometry("400x300")
 
         # Центрирование окна на экране
@@ -208,7 +227,7 @@ class UpdateWindow:
         self.status_label.pack(pady=10)
 
         # Постепенное появление текста
-        self.animate_text("Ося")
+        self.animate_text("О с я")
 
     def animate_text(self, text):
         index = 0
@@ -225,20 +244,21 @@ class UpdateWindow:
         self.master.update_idletasks()
 
     def fade_out(self):
-        alpha = float(self.master.attributes("-alpha"))  # Получаем текущую прозрачность
+        alpha = float(self.master.attributes("-alpha"))
         if alpha > 0:
-            alpha -= 0.05  # уменьшаем прозрачность на 5%
+            alpha -= 0.05
             self.master.attributes("-alpha", alpha)
-            self.master.after(50, self.fade_out)  # повторяем через 50 мс
+            self.master.after(50, self.fade_out)
         else:
-            self.master.destroy()  # закрываем окно, когда прозрачность достигает нуля
+            self.master.destroy()
 
-# Главный вход в программу
+# Основной цикл программы
 if __name__ == "__main__":
     owner = "oskinr"   # Имя владельца репозитория на GitHub
     repo = "osa"       # Название вашего репозитория
     exe_path = r"osa.exe"  # Исполняемый файл
     new_file = os.path.join(os.path.dirname(exe_path), "osa_new.exe")
+
     # Создаем главное окно
     root = tk.Tk()
     window = UpdateWindow(root)
