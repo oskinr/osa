@@ -38,22 +38,16 @@ class AnimatedGif(tk.Label):
 
 # Функция для извлечения версии продукта из файла EXE с помощью PowerShell
 def extract_product_version_from_exe(file_path):
-    """
-    Извлекает версию продукта из файла EXE с помощью PowerShell.
-    """
-    command = [
-        "powershell",
-        "-Command",
-        "(Get-ItemProperty -Path '{}').VersionInfo.ProductVersion".format(file_path)
-    ]
+    command = ["powershell", "-Command", "(Get-ItemProperty -Path '{}').VersionInfo.ProductVersion".format(file_path)]
     try:
-        result = subprocess.check_output(command, universal_newlines=True)
-        return result.strip()  # убираем лишние пробелы и символы перевода строки
+        # Передаем дополнительный флаг CREATE_NO_WINDOW, чтобы окно PowerShell не появлялось
+        result = subprocess.check_output(command, universal_newlines=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        return result.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Ошибка при выполнении команды PowerShell: {e}")
+        messagebox.showerror("Ошибка", f"Ошибка при выполнении команды PowerShell: {e}")
         return None
     except Exception as e:
-        print(f"Общая ошибка: {e}")
+        messagebox.showerror("Ошибка", f"Общая ошибка: {e}")
         return None
 
 # Логика проверки и скачивания обновлений
@@ -268,3 +262,4 @@ if __name__ == "__main__":
 
     # Окно остается открытым
     root.mainloop()
+
